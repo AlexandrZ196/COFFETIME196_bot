@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+
+# Git
+.git/
+.gitignore
+
+# Secrets and configs
+.env
+*.key
+*.pem
+credentials.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+
+# Логи
+logs/
+*.log
+temp/
