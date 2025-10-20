@@ -4,12 +4,19 @@ from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, ConversationHandler
 
 # --- Конфигурация ---
-# Токен берется из переменных окружения Bothost
 BOT_TOKEN = os.environ.get('8452776500:AAH29GOiUiKTLjK31KyB8c_NUilHlem3jNU')
-# ID чата администратора
-ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID', '-1001234567890')  # Замените на ваш
+ADMIN_CHAT_ID = os.environ.get('ADMIN_CHAT_ID')
 
-# Настройка логирования
+# Проверка обязательных переменных
+if not BOT_TOKEN or not ADMIN_CHAT_ID:
+    raise ValueError("Не установлены BOT_TOKEN или ADMIN_CHAT_ID в переменных окружения")
+/chat_id
+# Конвертируем ADMIN_CHAT_ID в int
+try:
+    ADMIN_CHAT_ID = int(ADMIN_CHAT_ID)
+except ValueError:
+    raise ValueError("ADMIN_CHAT_ID должен быть числом")
+
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
 )
@@ -36,6 +43,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "Чем могу помочь? Выбери опцию ниже:"
     )
     await update.message.reply_text(welcome_text, reply_markup=main_menu_keyboard())
+    return ConversationHandler.END
 
 async def show_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     news_text = (
@@ -57,8 +65,8 @@ async def show_contacts(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(contact_text, parse_mode='HTML')
 
-# --- Обработка сообщений ---
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+# --- Обработка главного меню ---
+async def handle_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "Оставить отзыв ✍️":
@@ -77,8 +85,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif text == "Поделиться фото 📸":
         await update.message.reply_text(
-            "Присылай свое фото! Мы с радостью опубликуем самые интересные фото у себя в сторис! 📸",
-            reply_markup=ReplyKeyboardMarkup([[KeyboardButton("Отмена 🔙")]], resize_keyboard=True)
+            "Присылай свое фото! Мы с радостью опубликуем самые интересные фото у себя в сторис! 📸"
         )
 
     elif text == "Новинки 🆕":
@@ -87,40 +94,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "Обратная связь 📞":
         await show_contacts(update, context)
 
-    elif text == "Отмена 🔙":
-        await update.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
-        return ConversationHandler.END
-
-    else:
-        await forward_to_admin(update, context, message_type="📨 Прочее сообщение")
-        await update.message.reply_text("Спасибо за сообщение! Мы его получили.", reply_markup=main_menu_keyboard())
-
     return ConversationHandler.END
 
+# --- Обработка отзывов и пожеланий ---
 async def received_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_feedback = update.message.text
     user = update.message.from_user
 
-    await context.bot.send_message(
-        chat_id=ADMIN_CHAT_ID,
-        text=f"📝 <b>Новый отзыв</b> от @{user.username or 'N/A'} (ID: {user.id}):\n\n{user_feedback}",
-        parse_mode='HTML'
-    )
-
-    await update.message.reply_text("Большое спасибо за твой отзыв! 💚", reply_markup=main_menu_keyboard())
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=f"📝 <b>Новый отзыв</b> от @{user.username or user.first_name} (ID: {user.id}):\n\n{user_feedback}",
+            parse_mode='HTML'
+        )
+        await update.message.reply_text("Большое спасибо за твой отзыв! 💚", reply_markup=main_menu_keyboard())
+    except Exception as e:
+        logger.error(f"Ошибка отправки отзыва: {e}")
+        await update.message.reply_text("Произошла ошибка. Попробуйте позже.", reply_markup=main_menu_keyboard())
+    
     return ConversationHandler.END
 
 async def received_suggestion(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_suggestion = update.message.text
     user = update.message.from_user
 
-    await context.bot.send_message(
-        chat_id=ADMIN_CHAT_ID,
-        text=f"💡 <b>Новое пожелание/идея</b> от @{user.username or 'N/A'} (ID: {user.id}):\n\n{user_suggestion}",
-        parse_mode='HTML'
-    )
-
-    await update.message.reply_text("Супер! Спасибо за идею! Мы обязательно её рассмотрим. 🔥", reply_markup=main_menu_keyboard())
+    try:
+        await context.bot.send_message(
+            chat_id=ADMIN_CHAT_ID,
+            text=f"💡 <b>Новое пожелание/идея</b> от @{user.username or user.first_name} (ID: {user.id}):\n\n{user_suggestion}",
+            parse_mode='HTML'
+        )
+        await update.message.reply_text("Супер! Спасибо за идею! Мы обязательно её рассмотрим. 🔥", reply_markup=main_menu_keyboard())
+    except Exception as e:
+        logger.error(f"Ошибка отправки пожелания: {e}")
+        await update.message.reply_text("Произошла ошибка. Попробуйте позже.", reply_markup=main_menu_keyboard())
+    
     return ConversationHandler.END
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,68 +136,70 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo_file = await update.message.photo[-1].get_file()
     caption = update.message.caption or "Без описания"
 
-    await context.bot.send_photo(
-        chat_id=ADMIN_CHAT_ID,
-        photo=photo_file.file_id,
-        caption=f"📸 <b>Новое фото</b> от @{user.username or 'N/A'} (ID: {user.id}):\n{caption}",
-        parse_mode='HTML'
-    )
+    try:
+        await context.bot.send_photo(
+            chat_id=ADMIN_CHAT_ID,
+            photo=photo_file.file_id,
+            caption=f"📸 <b>Новое фото</b> от @{user.username or user.first_name} (ID: {user.id}):\n{caption}",
+            parse_mode='HTML'
+        )
+        await update.message.reply_text("Вау, крутое фото! Спасибо, что делишься с нами! 🤩", reply_markup=main_menu_keyboard())
+    except Exception as e:
+        logger.error(f"Ошибка отправки фото: {e}")
+        await update.message.reply_text("Произошла ошибка при отправке фото. Попробуйте позже.", reply_markup=main_menu_keyboard())
 
-    await update.message.reply_text("Вау, крутое фото! Спасибо, что делишься с нами! 🤩", reply_markup=main_menu_keyboard())
-
-async def forward_to_admin(update: Update, context: ContextTypes.DEFAULT_TYPE, message_type="Сообщение"):
-    user = update.message.from_user
-    text = update.message.text
-
-    await context.bot.send_message(
-        chat_id=ADMIN_CHAT_ID,
-        text=f"{message_type} от @{user.username or 'N/A'} (ID: {user.id}):\n\n{text}",
-        parse_mode='HTML'
-    )
-
-# Команда для получения ID чата (уберите после настройки)
+# Команда для получения ID чата
 async def get_chat_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.message.chat_id
     await update.message.reply_text(f"ID этого чата: <code>{chat_id}</code>", parse_mode='HTML')
 
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Главное меню:", reply_markup=main_menu_keyboard())
+    return ConversationHandler.END
+
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    logger.warning('Update "%s" caused error "%s"', update, context.error)
+    logger.error(f'Update {update} caused error {context.error}')
 
 def main():
-    # Создаем Application
-    application = Application.builder().token(BOT_TOKEN).build()
+    try:
+        application = Application.builder().token(BOT_TOKEN).build()
 
-    # Обработчик диалога
-    conv_handler = ConversationHandler(
-        entry_points=[
-            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
-        ],
-        states={
-            TYPING_FEEDBACK: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, received_feedback)
+        # Обработчик диалога для отзывов и пожеланий
+        conv_handler = ConversationHandler(
+            entry_points=[
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_main_menu)
             ],
-            TYPING_SUGGESTION: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, received_suggestion)
+            states={
+                TYPING_FEEDBACK: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, received_feedback)
+                ],
+                TYPING_SUGGESTION: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, received_suggestion)
+                ],
+            },
+            fallbacks=[
+                CommandHandler('cancel', cancel),
+                CommandHandler('start', start),
+                MessageHandler(filters.Regex('^Отмена 🔙$'), cancel)
             ],
-        },
-        fallbacks=[
-            CommandHandler('start', start),
-            MessageHandler(filters.Regex("^Отмена 🔙$"), start)
-        ],
-    )
+        )
 
-    # Добавляем обработчики
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("chat_id", get_chat_id))  # Удалите после настройки
-    application.add_handler(conv_handler)
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        # Добавляем обработчики в правильном порядке
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CommandHandler("chat_id", get_chat_id))
+        application.add_handler(CommandHandler("cancel", cancel))
+        application.add_handler(conv_handler)
+        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+        
+        # Обработчик ошибок
+        application.add_error_handler(error)
 
-    # Обработчик ошибок
-    application.add_error_handler(error)
+        # Запускаем бота
+        logger.info("Бот запущен...")
+        application.run_polling()
 
-    # Запускаем бота
-    application.run_polling()
+    except Exception as e:
+        logger.error(f"Ошибка запуска бота: {e}")
 
 if __name__ == '__main__':
     main()
